@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: dogfood
+      POSTGRES_USER: dogfood
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dogfood-local-password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dogfood -d dogfood"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://dogfood:${POSTGRES_PASSWORD:-dogfood-local-password}@db:5432/dogfood?schema=public
+      SESSION_SECRET: ${SESSION_SECRET:-replace-this-local-development-secret}
+      NODE_ENV: production
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

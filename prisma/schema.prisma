@@ -1,0 +1,227 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PARTICIPANT
+  JUDGE
+  ORGANIZER
+  ADMIN
+}
+
+enum EventStatus {
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         UserRole  @default(PARTICIPANT)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions          Session[]
+  teamMemberships    TeamMember[]
+  submissions       Submission[] @relation("SubmissionAuthor")
+  auditLogs         AuditLog[]   @relation("AuditActor")
+  judgeAssignments  JudgeAssignment[]
+  scoredAssignments Score[]      @relation("ScoreActor")
+
+  @@index([role])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Event {
+  id                String      @id @default(cuid())
+  name              String
+  startsAt          DateTime
+  endsAt            DateTime
+  submissionDeadline DateTime
+  status            EventStatus @default(DRAFT)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  tracks      Track[]
+  prizes      Prize[]
+  teams       Team[]
+  submissions Submission[]
+  rubrics     Rubric[]
+
+  @@index([startsAt, endsAt])
+}
+
+model Track {
+  id          String   @id @default(cuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  submissions Submission[]
+
+  @@unique([eventId, name])
+  @@index([eventId])
+}
+
+model Prize {
+  id          String   @id @default(cuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  amount      String?
+  createdAt   DateTime @default(now())
+
+  @@unique([eventId, name])
+  @@index([eventId])
+}
+
+model Team {
+  id         String   @id @default(cuid())
+  eventId    String
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name       String
+  inviteCode String   @unique
+  createdAt  DateTime @default(now())
+
+  members     TeamMember[]
+  submissions Submission[]
+
+  @@unique([eventId, name])
+  @@index([eventId])
+}
+
+model TeamMember {
+  id       String   @id @default(cuid())
+  teamId   String
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+}
+
+model Submission {
+  id               String           @id @default(cuid())
+  teamId           String
+  team             Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  eventId          String
+  event            Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  trackId          String
+  track            Track            @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  title            String
+  description      String?
+  repoUrl          String?
+  demoUrl          String?
+  status           SubmissionStatus @default(DRAFT)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  submittedByUserId String?
+  submittedBy      User?            @relation("SubmissionAuthor", fields: [submittedByUserId], references: [id], onDelete: SetNull)
+
+  judgeAssignments JudgeAssignment[]
+
+  @@index([eventId, status])
+  @@index([teamId])
+  @@index([trackId])
+}
+
+model Rubric {
+  id        String    @id @default(cuid())
+  eventId   String
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name      String    @default("Default Rubric")
+  createdAt DateTime  @default(now())
+
+  criteria RubricCriterion[]
+
+  @@unique([eventId, name])
+  @@index([eventId])
+}
+
+model RubricCriterion {
+  id        String   @id @default(cuid())
+  rubricId  String
+  rubric    Rubric   @relation(fields: [rubricId], references: [id], onDelete: Cascade)
+  name      String
+  weight    Float
+  maxScore  Int
+  createdAt DateTime @default(now())
+
+  scores Score[]
+
+  @@unique([rubricId, name])
+  @@index([rubricId])
+}
+
+model JudgeAssignment {
+  id          String   @id @default(cuid())
+  judgeId     String
+  judge       User     @relation(fields: [judgeId], references: [id], onDelete: Cascade)
+  submissionId String
+  submission  Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  assignedAt  DateTime @default(now())
+
+  scores Score[]
+
+  @@unique([judgeId, submissionId])
+  @@index([judgeId])
+  @@index([submissionId])
+}
+
+model Score {
+  id             String   @id @default(cuid())
+  assignmentId   String
+  assignment     JudgeAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  criterionId    String
+  criterion      RubricCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+  value          Float
+  createdAt      DateTime @default(now())
+  scoredByUserId String?
+  scoredBy       User?    @relation("ScoreActor", fields: [scoredByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([assignmentId, criterionId])
+  @@index([assignmentId])
+  @@index([criterionId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entity, entityId])
+}
