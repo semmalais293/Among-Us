@@ -11,14 +11,27 @@ A self-hosted, offline-first hackathon submission and judging portal for 72-hour
 
 ## Seeded accounts
 
-The seed prints these login details to the app logs at startup.
+The seed creates or refreshes these login details at startup.
 
-| Email                        | Password              | Role        |
-| ---------------------------- | --------------------- | ----------- |
-| `admin@dogfood.local`        | `AdminPass123!`       | ADMIN       |
-| `organizer@dogfood.local`    | `OrganizerPass123!`   | ORGANIZER   |
-| `judge1@dogfood.local`       | `JudgePass123!`       | JUDGE       |
-| `participant1@dogfood.local` | `ParticipantPass123!` | PARTICIPANT |
+| Email                         | Password              | Role        |
+| ----------------------------- | --------------------- | ----------- |
+| `admin@dogfood.local`         | `AdminPass123!`       | ADMIN       |
+| `organizer@dogfood.local`     | `OrganizerPass123!`   | ORGANIZER   |
+| `judge1@dogfood.local`        | `JudgePass123!`       | JUDGE       |
+| `judge2@dogfood.local`        | `JudgePass123!`       | JUDGE       |
+| `judge3@dogfood.local`        | `JudgePass123!`       | JUDGE       |
+| `participant1@dogfood.local`  | `ParticipantPass123!` | PARTICIPANT |
+| `participant2@dogfood.local`  | `ParticipantPass123!` | PARTICIPANT |
+| `participant3@dogfood.local`  | `ParticipantPass123!` | PARTICIPANT |
+| `participant4@dogfood.local`  | `ParticipantPass123!` | PARTICIPANT |
+| `participant5@dogfood.local`  | `ParticipantPass123!` | PARTICIPANT |
+| `participant6@dogfood.local`  | `ParticipantPass123!` | PARTICIPANT |
+| `participant7@dogfood.local`  | `ParticipantPass123!` | PARTICIPANT |
+| `participant8@dogfood.local`  | `ParticipantPass123!` | PARTICIPANT |
+| `participant9@dogfood.local`  | `ParticipantPass123!` | PARTICIPANT |
+| `participant10@dogfood.local` | `ParticipantPass123!` | PARTICIPANT |
+| `participant11@dogfood.local` | `ParticipantPass123!` | PARTICIPANT |
+| `participant12@dogfood.local` | `ParticipantPass123!` | PARTICIPANT |
 
 ## Docker workflow
 

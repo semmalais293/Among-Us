@@ -11,10 +11,10 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     user: {
-      id: auth.user.id,
-      email: auth.user.email,
-      name: auth.user.name,
-      role: auth.user.role,
+      id: auth.session.user.id,
+      email: auth.session.user.email,
+      name: auth.session.user.name,
+      role: auth.session.user.role,
     },
   });
 }
