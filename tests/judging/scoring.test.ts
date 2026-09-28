@@ -2,210 +2,99 @@ import assert from "node:assert";
 import { test, describe } from "node:test";
 import {
   calculateWeightedScore,
-  submitAssignmentScores,
+  validateScores,
+  type RubricCriterion,
 } from "../../src/services/scoring.ts";
 
-describe("Scoring Service - Unit & Logic Tests", () => {
-  test("calculateWeightedScore: calculates correct percentage with equal weights", () => {
+describe("Scoring Service - Pure Formula & Boundary Tests", () => {
+  const criteria: RubricCriterion[] = [
+    { id: "c1", name: "Impact", weight: 3, maxScore: 10 },
+    { id: "c2", name: "Technical Execution", weight: 2, maxScore: 20 },
+    { id: "c3", name: "UI/UX", weight: 1, maxScore: 5 },
+  ];
+
+  test("calculateWeightedScore: computes correct weighted score percentage", () => {
+    // Formula: sum(criterion.value / maxScore * weight) / sum(weights) * 100
+    // c1: 8/10 * 3 = 2.4
+    // c2: 15/20 * 2 = 1.5
+    // c3: 4/5 * 1 = 0.8
+    // Total weight = 3 + 2 + 1 = 6
+    // Weighted progress sum = 2.4 + 1.5 + 0.8 = 4.7
+    // Final weighted score = (4.7 / 6) * 100 = 78.33%
+
     const scores = [
-      { value: 8, maxScore: 10, weight: 1 }, // 80%
-      { value: 6, maxScore: 10, weight: 1 }, // 60%
+      { criterionId: "c1", value: 8 },
+      { criterionId: "c2", value: 15 },
+      { criterionId: "c3", value: 4 },
     ];
-    const result = calculateWeightedScore(scores);
-    assert.strictEqual(result.percentageScore, 70);
-    assert.strictEqual(result.rawSum, 14);
-    assert.strictEqual(result.maxPossibleSum, 20);
+
+    const result = calculateWeightedScore(criteria, scores);
+
+    assert.strictEqual(result.weightedScore, 78.33);
+    assert.strictEqual(result.rawPoints, 27); // 8 + 15 + 4
+    assert.strictEqual(result.maxPoints, 35); // 10 + 20 + 5
+    assert.strictEqual(result.totalWeight, 6);
+
+    // Verify breakdown
+    assert.strictEqual(result.breakdown[0].percentage, 80); // 8/10
+    assert.strictEqual(result.breakdown[1].percentage, 75); // 15/20
+    assert.strictEqual(result.breakdown[2].percentage, 80); // 4/5
   });
 
-  test("calculateWeightedScore: weights criteria correctly", () => {
-    // Criterion 1: weight 3, value 10/10 (100% -> 3.0 weighted points)
-    // Criterion 2: weight 1, value 5/10 (50% -> 0.5 weighted points)
-    // Total weight = 4, Total weighted progress = 3.5 -> (3.5 / 4) * 100 = 87.5%
+  test("validateScores: rejects score out of range (value > maxScore)", () => {
     const scores = [
-      { value: 10, maxScore: 10, weight: 3 },
-      { value: 5, maxScore: 10, weight: 1 },
+      { criterionId: "c1", value: 12 }, // Max is 10!
     ];
-    const result = calculateWeightedScore(scores);
-    assert.strictEqual(result.percentageScore, 87.5);
-    assert.strictEqual(result.weightedScore, 3.5);
-  });
 
-  test("calculateWeightedScore: clamps out-of-bound values", () => {
-    const scores = [
-      { value: 15, maxScore: 10, weight: 1 }, // clamped to 10
-      { value: -5, maxScore: 10, weight: 1 }, // clamped to 0
-    ];
-    const result = calculateWeightedScore(scores);
-    assert.strictEqual(result.percentageScore, 50);
-    assert.strictEqual(result.rawSum, 10);
-  });
-
-  test("calculateWeightedScore: handles empty criteria array gracefully", () => {
-    const result = calculateWeightedScore([]);
-    assert.strictEqual(result.percentageScore, 0);
-    assert.strictEqual(result.rawSum, 0);
-  });
-
-  test("submitAssignmentScores: rejects unauthorized judge attempting to score", async () => {
-    const mockDb: any = {
-      judgeAssignment: {
-        findUnique: async () => ({
-          id: "assign-1",
-          judgeId: "judge-correct",
-          submission: {
-            event: {
-              rubric: {
-                criteria: [{ id: "c1", name: "Impact", weight: 1, maxScore: 10 }],
-              },
-            },
-          },
-        }),
-      },
-    };
-
-    await assert.rejects(
-      async () => {
-        await submitAssignmentScores(
-          {
-            assignmentId: "assign-1",
-            judgeId: "impostor-judge",
-            scores: [{ criterionId: "c1", value: 8 }],
-          },
-          mockDb
-        );
+    assert.throws(
+      () => {
+        validateScores(criteria, scores);
       },
       {
-        message: "Unauthorized: You are not assigned to score this submission.",
+        message: 'Score out of range: value 12 for criterion "Impact" must be between 0 and 10.',
       }
     );
   });
 
-  test("submitAssignmentScores: rejects score for non-existent criterion", async () => {
-    const mockDb: any = {
-      judgeAssignment: {
-        findUnique: async () => ({
-          id: "assign-1",
-          judgeId: "judge-1",
-          submission: {
-            event: {
-              rubric: {
-                criteria: [{ id: "c1", name: "Code Quality", weight: 1, maxScore: 10 }],
-              },
-            },
-          },
-        }),
-      },
-    };
+  test("validateScores: rejects score out of range (value < 0)", () => {
+    const scores = [
+      { criterionId: "c2", value: -1 }, // Negative score
+    ];
 
-    await assert.rejects(
-      async () => {
-        await submitAssignmentScores(
-          {
-            assignmentId: "assign-1",
-            judgeId: "judge-1",
-            scores: [{ criterionId: "c-invalid", value: 9 }],
-          },
-          mockDb
-        );
+    assert.throws(
+      () => {
+        validateScores(criteria, scores);
       },
       {
-        message: 'Criterion ID c-invalid does not belong to this event\'s rubric.',
+        message: 'Score out of range: value -1 for criterion "Technical Execution" must be between 0 and 20.',
       }
     );
   });
 
-  test("submitAssignmentScores: rejects score exceeding maxScore", async () => {
-    const mockDb: any = {
-      judgeAssignment: {
-        findUnique: async () => ({
-          id: "assign-1",
-          judgeId: "judge-1",
-          submission: {
-            event: {
-              rubric: {
-                criteria: [{ id: "c1", name: "Innovation", weight: 1, maxScore: 10 }],
-              },
-            },
-          },
-        }),
-      },
-    };
+  test("validateScores: rejects non-existent criterion", () => {
+    const scores = [
+      { criterionId: "unknown-criterion-999", value: 5 },
+    ];
 
-    await assert.rejects(
-      async () => {
-        await submitAssignmentScores(
-          {
-            assignmentId: "assign-1",
-            judgeId: "judge-1",
-            scores: [{ criterionId: "c1", value: 12 }],
-          },
-          mockDb
-        );
+    assert.throws(
+      () => {
+        validateScores(criteria, scores);
       },
       {
-        message: 'Invalid score value 12 for criterion "Innovation". Must be between 0 and 10.',
+        message: 'Criterion ID "unknown-criterion-999" not found in rubric criteria.',
       }
     );
   });
 
-  test("submitAssignmentScores: successfully saves final scores and marks completed", async () => {
-    let completedMarked = false;
-    const upsertedScores: any[] = [];
+  test("validateScores: allows valid boundaries (0 and maxScore)", () => {
+    const scores = [
+      { criterionId: "c1", value: 0 },
+      { criterionId: "c2", value: 20 },
+      { criterionId: "c3", value: 5 },
+    ];
 
-    const mockDb: any = {
-      judgeAssignment: {
-        findUnique: async () => ({
-          id: "assign-1",
-          judgeId: "judge-1",
-          submission: {
-            event: {
-              rubric: {
-                criteria: [
-                  { id: "c1", name: "UI/UX", weight: 1, maxScore: 10 },
-                  { id: "c2", name: "Execution", weight: 2, maxScore: 10 },
-                ],
-              },
-            },
-          },
-        }),
-      },
-      $transaction: async (cb: any) => {
-        const tx = {
-          score: {
-            upsert: async (payload: any) => {
-              upsertedScores.push(payload);
-            },
-          },
-          judgeAssignment: {
-            update: async (payload: any) => {
-              completedMarked = payload.data.isCompleted;
-            },
-          },
-          auditLog: {
-            create: async () => {},
-          },
-        };
-        return await cb(tx);
-      },
-    };
-
-    const res = await submitAssignmentScores(
-      {
-        assignmentId: "assign-1",
-        judgeId: "judge-1",
-        scores: [
-          { criterionId: "c1", value: 8 },
-          { criterionId: "c2", value: 10 },
-        ],
-        isDraft: false,
-      },
-      mockDb
-    );
-
-    assert.strictEqual(completedMarked, true);
-    assert.strictEqual(res.isCompleted, true);
-    assert.strictEqual(upsertedScores.length, 2);
-    // (8/10 * 1 + 10/10 * 2) / 3 * 100 = 2.8 / 3 * 100 = 93.33%
-    assert.strictEqual(res.percentageScore, 93.33);
+    assert.doesNotThrow(() => {
+      validateScores(criteria, scores);
+    });
   });
 });

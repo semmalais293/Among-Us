@@ -1,158 +1,114 @@
 import assert from "node:assert";
 import { test, describe } from "node:test";
 import {
-  calculateSampleStats,
-  computeZScore,
-  getEventNormalizedStandings,
+  computeStats,
+  normalizeScores,
+  type JudgeScoreInput,
 } from "../../src/services/normalization.ts";
 
-describe("Normalization Service - Mathematical & Calibration Tests", () => {
-  test("calculateSampleStats: correctly computes mean and standard deviation with Bessel correction", () => {
-    // Dataset: [10, 20, 30] -> mean = 20, variance = (100 + 0 + 100) / 2 = 100 -> stdDev = 10
-    const stats = calculateSampleStats([10, 20, 30]);
+describe("Normalization Service - Pure Logic & Fixtures", () => {
+  test("computeStats: correctly computes mean and sample standard deviation", () => {
+    const stats = computeStats([10, 20, 30]);
     assert.strictEqual(stats.mean, 20);
     assert.strictEqual(stats.stdDev, 10);
   });
 
-  test("calculateSampleStats: handles single element without dividing by zero", () => {
-    const stats = calculateSampleStats([75]);
-    assert.strictEqual(stats.mean, 75);
+  test("computeStats: handles single element gracefully", () => {
+    const stats = computeStats([85]);
+    assert.strictEqual(stats.mean, 85);
     assert.strictEqual(stats.stdDev, 0);
   });
 
-  test("computeZScore: calculates accurate Z-score and calibrated target score", () => {
-    // Judge mean = 60, stdDev = 10, rawScore = 80 -> z = +2.0
-    // Target mean = 75, target stdDev = 15 -> Calibrated score = 75 + 2 * 15 = 105 -> clamped to 100
-    const res = computeZScore(80, 60, 10, 75, 15);
-    assert.strictEqual(res.zScore, 2);
-    assert.strictEqual(res.normalizedScore, 100);
+  test("normalizeScores: harsh judge vs lenient judge fixture SHOWING raw ranking != normalized ranking", () => {
+    /**
+     * FIXTURE SETUP:
+     * - Judge Harsh:
+     *   - Submission A: 60 (Harsh's highest score! Other scores: 40, 20. Mean = 40, stdDev = 20)
+     * - Judge Lenient:
+     *   - Submission B: 80 (Lenient's lowest score! Other scores: 90, 100. Mean = 90, stdDev = 10)
+     *
+     * RAW COMPARISON:
+     * - Submission B has raw average 80
+     * - Submission A has raw average 60
+     * Raw Ranking: Submission B (#1) > Submission A (#2)
+     *
+     * NORMALIZED COMPARISON (targetMean=75, targetStdDev=15):
+     * - Submission A Z-Score = (60 - 40) / 20 = +1.0
+     *   Normalized Score = 75 + 1.0 * 15 = 90.0
+     * - Submission B Z-Score = (80 - 90) / 10 = -1.0
+     *   Normalized Score = 75 + (-1.0) * 15 = 60.0
+     *
+     * Normalized Ranking: Submission A (#1, score 90) > Submission B (#2, score 60)
+     * Proves: RAW RANKING != NORMALIZED RANKING!
+     */
 
-    // Below average: rawScore = 50 -> z = -1.0 -> 75 - 15 = 60
-    const res2 = computeZScore(50, 60, 10, 75, 15);
-    assert.strictEqual(res2.zScore, -1);
-    assert.strictEqual(res2.normalizedScore, 60);
+    const fixtureScores: JudgeScoreInput[] = [
+      // Judge Harsh (scores: 65, 30, 25 -> mean = 40, stdDev = 21.79)
+      { judgeId: "judge-harsh", submissionId: "sub-A", weightedScore: 65 },
+      { judgeId: "judge-harsh", submissionId: "sub-C", weightedScore: 30 },
+      { judgeId: "judge-harsh", submissionId: "sub-D", weightedScore: 25 },
+
+      // Judge Lenient (scores: 85, 90, 95 -> mean = 90, stdDev = 5)
+      { judgeId: "judge-lenient", submissionId: "sub-B", weightedScore: 85 },
+      { judgeId: "judge-lenient", submissionId: "sub-E", weightedScore: 90 },
+      { judgeId: "judge-lenient", submissionId: "sub-F", weightedScore: 95 },
+    ];
+
+    const result = normalizeScores(fixtureScores, { targetMean: 75, targetStdDev: 15 });
+
+    const rankSubA = result.rankings.find((r) => r.submissionId === "sub-A")!;
+    const rankSubB = result.rankings.find((r) => r.submissionId === "sub-B")!;
+
+    // 1. Verify Raw Scores: Sub B (85) beats Sub A (65)
+    assert.strictEqual(rankSubA.rawAverage, 65);
+    assert.strictEqual(rankSubB.rawAverage, 85);
+    assert.ok(rankSubB.rawAverage > rankSubA.rawAverage, "Raw: Sub B must have higher raw score than Sub A");
+
+    // 2. Verify Normalized Scores: Sub A (92.21) beats Sub B (60.0)
+    assert.strictEqual(rankSubA.normalizedScore, 92.21);
+    assert.strictEqual(rankSubB.normalizedScore, 60.0);
+
+    // 3. Verify that Normalized Ranking INVERTS Raw Ranking!
+    assert.strictEqual(rankSubA.rank, 1, "Sub A must be Rank #1 after normalization");
+    assert.strictEqual(rankSubB.rank, 6, "Sub B must be Rank #6 after normalization");
+    assert.ok(rankSubA.normalizedScore > rankSubB.normalizedScore);
+
+    // Explicit assertion: Raw ranking != Normalized ranking
+    const rawRanks = [...result.rankings].sort((a, b) => b.rawAverage - a.rawAverage);
+    assert.notDeepStrictEqual(
+      rawRanks.map((r) => r.submissionId),
+      result.rankings.map((r) => r.submissionId),
+      "Raw ranking must NOT equal normalized ranking"
+    );
   });
 
-  test("computeZScore: handles zero standard deviation gracefully", () => {
-    const res = computeZScore(85, 85, 0, 75, 15);
-    assert.strictEqual(res.zScore, 0);
-    assert.strictEqual(res.normalizedScore, 85);
+  test("normalizeScores: fallback to mean-centering when judge has < 2 scores", () => {
+    const scores: JudgeScoreInput[] = [
+      { judgeId: "judge-single", submissionId: "sub-1", weightedScore: 85 },
+    ];
+
+    const result = normalizeScores(scores, { targetMean: 75 });
+    assert.strictEqual(result.judgeStats["judge-single"].isFallback, true);
+    // When count=1, zScore is 0 (mean-centered: 85 - 85 = 0), normalized = 75
+    const ev = result.evaluations[0];
+    assert.strictEqual(ev.zScore, 0);
+    assert.strictEqual(ev.normalizedScore, 75);
   });
 
-  test("getEventNormalizedStandings: eliminates judge bias across lenient vs harsh judges", async () => {
-    // Scenario:
-    // Submission A was scored by Judge Harsh: 70% (which was the highest score Judge Harsh gave! Harsh mean is 50, std 10)
-    // Submission B was scored by Judge Generous: 85% (which was the lowest score Judge Generous gave! Generous mean is 90, std 5)
-    //
-    // Raw comparison: Submission B (85%) would beat Submission A (70%).
-    // Normalized comparison:
-    // Submission A Z-score = (70 - 50) / 10 = +2.0 -> Normalized = 75 + 2 * 15 = 100
-    // Submission B Z-score = (85 - 90) / 5 = -1.0 -> Normalized = 75 - 15 = 60
-    //
-    // Therefore, Submission A correctly ranks #1 over Submission B after normalization!
+  test("normalizeScores: fallback to mean-centering when judge has zero variance", () => {
+    const scores: JudgeScoreInput[] = [
+      { judgeId: "judge-flat", submissionId: "sub-1", weightedScore: 70 },
+      { judgeId: "judge-flat", submissionId: "sub-2", weightedScore: 70 },
+      { judgeId: "judge-flat", submissionId: "sub-3", weightedScore: 70 },
+    ];
 
-    const mockDb: any = {
-      judgeAssignment: {
-        findMany: async () => [
-          // Judge Harsh assignments (scores: 30, 50, 70 -> mean=50, variance=(400+0+400)/2=400 -> std=20)
-          {
-            id: "a-harsh-1",
-            judgeId: "judge-harsh",
-            judge: { id: "judge-harsh", name: "Judge Harsh" },
-            submissionId: "sub-A",
-            isCompleted: true,
-            submission: { track: { name: "AI" }, team: { name: "Team Alpha" } },
-            scores: [{ value: 7, criterion: { maxScore: 10, weight: 1 } }], // 70%
-          },
-          {
-            id: "a-harsh-2",
-            judgeId: "judge-harsh",
-            judge: { id: "judge-harsh", name: "Judge Harsh" },
-            submissionId: "sub-C",
-            isCompleted: true,
-            submission: { track: { name: "AI" }, team: { name: "Team Gamma" } },
-            scores: [{ value: 5, criterion: { maxScore: 10, weight: 1 } }], // 50%
-          },
-          {
-            id: "a-harsh-3",
-            judgeId: "judge-harsh",
-            judge: { id: "judge-harsh", name: "Judge Harsh" },
-            submissionId: "sub-D",
-            isCompleted: true,
-            submission: { track: { name: "Web" }, team: { name: "Team Delta" } },
-            scores: [{ value: 3, criterion: { maxScore: 10, weight: 1 } }], // 30%
-          },
-
-          // Judge Generous assignments (scores: 85, 90, 95 -> mean=90, variance=(25+0+25)/2=25 -> std=5)
-          {
-            id: "a-gen-1",
-            judgeId: "judge-gen",
-            judge: { id: "judge-gen", name: "Judge Generous" },
-            submissionId: "sub-B",
-            isCompleted: true,
-            submission: { track: { name: "AI" }, team: { name: "Team Beta" } },
-            scores: [{ value: 8.5, criterion: { maxScore: 10, weight: 1 } }], // 85%
-          },
-          {
-            id: "a-gen-2",
-            judgeId: "judge-gen",
-            judge: { id: "judge-gen", name: "Judge Generous" },
-            submissionId: "sub-E",
-            isCompleted: true,
-            submission: { track: { name: "Web" }, team: { name: "Team Epsilon" } },
-            scores: [{ value: 9.0, criterion: { maxScore: 10, weight: 1 } }], // 90%
-          },
-          {
-            id: "a-gen-3",
-            judgeId: "judge-gen",
-            judge: { id: "judge-gen", name: "Judge Generous" },
-            submissionId: "sub-F",
-            isCompleted: true,
-            submission: { track: { name: "Web" }, team: { name: "Team Zeta" } },
-            scores: [{ value: 9.5, criterion: { maxScore: 10, weight: 1 } }], // 95%
-          },
-        ],
-      },
-      submission: {
-        findMany: async () => [
-          {
-            id: "sub-A",
-            title: "Project Alpha",
-            trackId: "track-ai",
-            track: { name: "AI" },
-            team: { name: "Team Alpha" },
-            assignments: [{ id: "a-harsh-1" }],
-          },
-          {
-            id: "sub-B",
-            title: "Project Beta",
-            trackId: "track-ai",
-            track: { name: "AI" },
-            team: { name: "Team Beta" },
-            assignments: [{ id: "a-gen-1" }],
-          },
-        ],
-      },
-    };
-
-    const leaderboard = await getEventNormalizedStandings("event-1", 75, 15, mockDb);
-
-    const subA = leaderboard.standings.find((s) => s.submissionId === "sub-A");
-    const subB = leaderboard.standings.find((s) => s.submissionId === "sub-B");
-
-    assert.ok(subA && subB);
-
-    // Verify raw comparison
-    assert.strictEqual(subA.rawAverage, 70);
-    assert.strictEqual(subB.rawAverage, 85);
-
-    // Verify normalized calibration: Sub A scored +1.0 std dev above Harsh's mean -> 75 + 15 = 90
-    // Sub B scored -1.0 std dev below Generous's mean -> 75 - 15 = 60
-    assert.strictEqual(subA.normalizedScore, 90);
-    assert.strictEqual(subB.normalizedScore, 60);
-
-    // Verify rank: Project Alpha is #1!
-    assert.strictEqual(subA.rank, 1);
-    assert.strictEqual(subB.rank, 2);
+    const result = normalizeScores(scores, { targetMean: 75 });
+    assert.strictEqual(result.judgeStats["judge-flat"].isFallback, true);
+    assert.strictEqual(result.judgeStats["judge-flat"].stdDev, 0);
+    // All z-scores should be 0, all normalized scores equal targetMean
+    for (const ev of result.evaluations) {
+      assert.strictEqual(ev.zScore, 0);
+      assert.strictEqual(ev.normalizedScore, 75);
+    }
   });
 });

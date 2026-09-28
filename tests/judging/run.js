@@ -9,11 +9,12 @@ const testFiles = [
   resolve(__dirname, "normalization.test.ts"),
   resolve(__dirname, "assignment.test.ts"),
   resolve(__dirname, "export.test.ts"),
+  resolve(__dirname, "role-isolation.test.ts"),
 ];
 
-console.log("=== Running Judging Subsystem Test Suite (Tier 2) ===");
+console.log("=== Running Judging Subsystem Pure Test Suite (Tier 2) ===");
 console.log(`Node version: ${process.version}`);
-console.log(`Running ${testFiles.length} test files offline...`);
+console.log(`Running ${testFiles.length} test files offline with zero DB dependencies...`);
 
 const child = spawn(
   process.execPath,
@@ -23,7 +24,7 @@ const child = spawn(
 
 child.on("exit", (code) => {
   if (code === 0) {
-    console.log("\n All 20 judging subsystem tests PASSED successfully!");
+    console.log("\n All judging subsystem tests PASSED successfully!");
   } else {
     console.error(`\n Tests failed with exit code ${code}`);
   }

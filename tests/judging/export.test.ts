@@ -3,64 +3,75 @@ import { test, describe } from "node:test";
 import {
   escapeCsvField,
   buildCsv,
-  exportLeaderboardCsv,
+  generateAssignmentsCsv,
+  generateRawScoresCsv,
+  generateNormalizedResultsCsv,
 } from "../../src/services/export.ts";
 
-describe("Export Service - RFC 4180 CSV Tests", () => {
-  test("escapeCsvField: correctly handles strings, numbers, and nulls", () => {
-    assert.strictEqual(escapeCsvField("SimpleText"), "SimpleText");
-    assert.strictEqual(escapeCsvField(42), "42");
+describe("Export Service - Pure CSV Tests (RFC 4180)", () => {
+  test("escapeCsvField: handles commas, quotes, newlines, and values", () => {
+    assert.strictEqual(escapeCsvField("Hello"), "Hello");
+    assert.strictEqual(escapeCsvField('Quotes "inside" text'), '"Quotes ""inside"" text"');
+    assert.strictEqual(escapeCsvField("Line 1\nLine 2"), '"Line 1\nLine 2"');
+    assert.strictEqual(escapeCsvField("Field, with comma"), '"Field, with comma"');
     assert.strictEqual(escapeCsvField(null), "");
     assert.strictEqual(escapeCsvField(undefined), "");
+    assert.strictEqual(escapeCsvField(42), "42");
   });
 
-  test("escapeCsvField: wraps in quotes when comma, quote, or newline is present", () => {
-    // Comma
-    assert.strictEqual(escapeCsvField("Hackathon, LLC"), '"Hackathon, LLC"');
-    // Quotes (must double inner quotes)
-    assert.strictEqual(escapeCsvField('The "Best" Project'), '"The ""Best"" Project"');
-    // Newline
-    assert.strictEqual(escapeCsvField("Line 1\nLine 2"), '"Line 1\nLine 2"');
-  });
-
-  test("buildCsv: creates UTF-8 BOM prefixed RFC 4180 document", () => {
-    const headers = ["Title", "Score", "Notes"];
-    const rows = [
-      ["Project A", 95, "Great, clean UI"],
-      ['Project "B"', 80, "Needs work"],
-    ];
-
-    const csv = buildCsv(headers, rows);
-    // Starts with UTF-8 BOM
+  test("buildCsv: formats lines with CRLF and UTF-8 BOM", () => {
+    const csv = buildCsv(["Col1", "Col2"], [["Val1", "Val2"]]);
     assert.ok(csv.startsWith("\uFEFF"));
-
-    const lines = csv.replace("\uFEFF", "").split("\r\n");
-    assert.strictEqual(lines[0], "Title,Score,Notes");
-    assert.strictEqual(lines[1], 'Project A,95,"Great, clean UI"');
-    assert.strictEqual(lines[2], '"Project ""B""",80,Needs work');
+    assert.ok(csv.includes("Col1,Col2\r\nVal1,Val2"));
   });
 
-  test("exportLeaderboardCsv: outputs full CSV correctly", async () => {
-    const mockDb: any = {
-      judgeAssignment: {
-        findMany: async () => [],
+  test("generateAssignmentsCsv: creates assignment report", () => {
+    const csv = generateAssignmentsCsv([
+      {
+        judgeId: "J1",
+        judgeName: "Judge Alice",
+        submissionId: "S1",
+        submissionTitle: "Quantum AI",
+        isCompleted: true,
       },
-      submission: {
-        findMany: async () => [
-          {
-            id: "sub-101",
-            title: "Super App",
-            track: { name: "Open Source" },
-            team: { name: "Devs" },
-            assignments: [],
-          },
-        ],
-      },
-    };
+    ]);
 
-    const csv = await exportLeaderboardCsv("event-123", mockDb);
-    assert.ok(csv.includes("Super App"));
-    assert.ok(csv.includes("Open Source"));
-    assert.ok(csv.includes("Overall Rank"));
+    assert.ok(csv.includes("Judge ID,Judge Name,Submission ID,Submission Title,Status"));
+    assert.ok(csv.includes("J1,Judge Alice,S1,Quantum AI,COMPLETED"));
+  });
+
+  test("generateRawScoresCsv: creates line-item criteria score breakdown", () => {
+    const csv = generateRawScoresCsv([
+      {
+        judgeId: "J1",
+        judgeName: "Judge Alice",
+        submissionId: "S1",
+        submissionTitle: "Quantum AI",
+        criterionName: "Technical Depth",
+        value: 9,
+        maxScore: 10,
+        weight: 2,
+      },
+    ]);
+
+    assert.ok(csv.includes("Criterion Name,Score Value,Max Score,Weight,Percentage"));
+    assert.ok(csv.includes("Technical Depth,9,10,2,90.00%"));
+  });
+
+  test("generateNormalizedResultsCsv: creates normalized ranking export", () => {
+    const csv = generateNormalizedResultsCsv([
+      {
+        rank: 1,
+        submissionId: "S1",
+        submissionTitle: "Quantum AI",
+        trackName: "AI/ML",
+        rawAverage: 90,
+        normalizedScore: 92.5,
+        judgeCount: 3,
+      },
+    ]);
+
+    assert.ok(csv.includes("Rank,Submission ID,Submission Title,Track,Raw Average Score,Normalized Score,Total Judges"));
+    assert.ok(csv.includes("1,S1,Quantum AI,AI/ML,90.00,92.50,3"));
   });
 });

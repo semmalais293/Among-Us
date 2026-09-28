@@ -1,301 +1,124 @@
-// Lazy-loaded Prisma database client to support offline unit testing and modular development
-async function getDb(overrideClient?: any) {
-  if (overrideClient) return overrideClient;
-  try {
-    // @ts-ignore
-    const dbModule = await import("../lib/db");
-    return dbModule.db;
-  } catch {
-    throw new Error("Database client (src/lib/db) is not yet initialized by Person A.");
-  }
-}
+/**
+ * Pure assignment logic for hackathon judging.
+ * Strictly zero database dependencies.
+ */
 
-export interface CreateAssignmentParams {
+export interface Assignment {
   judgeId: string;
   submissionId: string;
 }
 
-export interface AutoAssignParams {
-  eventId: string;
-  judgesPerSubmission?: number;
-  trackId?: string;
-}
-
-export interface AssignmentProgress {
+export interface JudgeLoadSummary {
   judgeId: string;
-  judgeName: string;
-  judgeEmail: string;
-  totalAssigned: number;
-  completed: number;
-  pending: number;
-  completionRate: number;
+  assignedCount: number;
 }
 
 /**
- * Assign a judge to a submission.
- * Enforces conflict of interest: a judge cannot evaluate a submission from a team they belong to.
+ * Pure function: assign(judges, submissions, judgesPerSubmission)
+ *
+ * Balances workload so that each judge receives an equal number of submissions (+/- 1).
+ * Guarantees that no judge gets assigned the same submission twice.
+ *
+ * @param judges Array of judge IDs
+ * @param submissions Array of submission IDs
+ * @param judgesPerSubmission Number of judges needed for each submission
  */
-export async function assignJudgeToSubmission(
-  params: CreateAssignmentParams,
-  prismaClient?: any
-) {
-  const client = await getDb(prismaClient);
-  const { judgeId, submissionId } = params;
-
-  // 1. Fetch submission with team members to check conflict of interest
-  const submission = await client.submission.findUnique({
-    where: { id: submissionId },
-    include: {
-      team: {
-        include: {
-          members: true,
-        },
-      },
-    },
-  });
-
-  if (!submission) {
-    throw new Error(`Submission ${submissionId} not found.`);
+export function assign(
+  judges: string[],
+  submissions: string[],
+  judgesPerSubmission: number
+): Assignment[] {
+  if (judges.length === 0 || submissions.length === 0 || judgesPerSubmission <= 0) {
+    return [];
   }
 
-  // 2. Conflict of interest validation
-  if (submission.team) {
-    const isTeamMember = submission.team.members.some(
-      (m: { userId: string }) => m.userId === judgeId
-    );
-    if (isTeamMember) {
-      throw new Error(
-        `Conflict of interest: Judge ${judgeId} is a member of team ${submission.team.name} for submission ${submissionId}.`
-      );
-    }
-  }
+  // A submission cannot have more judges than total available judges
+  const k = Math.min(judgesPerSubmission, judges.length);
 
-  // 3. Verify user is a JUDGE, ORGANIZER, or ADMIN
-  const judge = await prismaClient.user.findUnique({
-    where: { id: judgeId },
-  });
-
-  if (!judge || !["JUDGE", "ORGANIZER", "ADMIN"].includes(judge.role)) {
-    throw new Error(`User ${judgeId} does not possess judging privileges.`);
-  }
-
-  // 4. Create or return existing assignment
-  const assignment = await prismaClient.judgeAssignment.upsert({
-    where: {
-      judgeId_submissionId: {
-        judgeId,
-        submissionId,
-      },
-    },
-    update: {},
-    create: {
-      judgeId,
-      submissionId,
-      isCompleted: false,
-    },
-    include: {
-      submission: true,
-      judge: {
-        select: { id: true, name: true, email: true },
-      },
-    },
-  });
-
-  return assignment;
-}
-
-/**
- * Automated round-robin load-balanced judge assignment.
- * Evenly distributes submissions across all available judges while respecting conflicts of interest.
- */
-export async function autoAssignJudges(
-  params: AutoAssignParams,
-  prismaClient?: any
-) {
-  const client = await getDb(prismaClient);
-  const { eventId, judgesPerSubmission = 3, trackId } = params;
-
-  // 1. Find all active judges for the event
-  const judges = await client.user.findMany({
-    where: {
-      role: { in: ["JUDGE", "ORGANIZER", "ADMIN"] },
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-    },
-  });
-
-  if (judges.length === 0) {
-    throw new Error("No eligible judges found for assignment.");
-  }
-
-  // 2. Find all submitted submissions for the event (optionally filtered by track)
-  const submissionFilter: any = {
-    eventId,
-    status: "SUBMITTED",
-  };
-  if (trackId) {
-    submissionFilter.trackId = trackId;
-  }
-
-  const submissions = await client.submission.findMany({
-    where: submissionFilter,
-    include: {
-      team: {
-        include: {
-          members: true,
-        },
-      },
-      assignments: true,
-    },
-  });
-
-  if (submissions.length === 0) {
-    return { assignedCount: 0, skippedDueToConflict: 0, message: "No submitted projects to assign." };
-  }
-
-  // Track judge assignment loads: judgeId -> count of assignments
+  // Track load per judge
   const judgeLoads = new Map<string, number>();
   for (const j of judges) {
-    judgeLoads.set(j.id, 0);
+    judgeLoads.set(j, 0);
   }
 
-  // Count existing assignments across the event
-  const existingAssignments = await client.judgeAssignment.findMany({
-    where: {
-      submission: {
-        eventId,
-      },
-    },
-  });
-  for (const a of existingAssignments) {
-    if (judgeLoads.has(a.judgeId)) {
-      judgeLoads.set(a.judgeId, (judgeLoads.get(a.judgeId) || 0) + 1);
-    }
-  }
+  const assignments: Assignment[] = [];
 
-  let assignedCount = 0;
-  let skippedDueToConflict = 0;
-
-  for (const sub of submissions) {
-    const existingJudgeIds = new Set(sub.assignments.map((a: { judgeId: string }) => a.judgeId));
-    const teamMemberIds = new Set(
-      sub.team ? sub.team.members.map((m: { userId: string }) => m.userId) : []
-    );
-
-    const needed = Math.max(0, judgesPerSubmission - existingJudgeIds.size);
-    if (needed === 0) continue;
-
-    // Filter eligible judges for this submission
-    const eligibleJudges = judges.filter((j: { id: string }) => {
-      if (existingJudgeIds.has(j.id)) return false;
-      if (teamMemberIds.has(j.id)) return false;
-      return true;
+  for (const subId of submissions) {
+    // Rank judges by lowest current load, tie-break by judge ID for determinism
+    const candidates = [...judges].sort((a, b) => {
+      const loadA = judgeLoads.get(a) || 0;
+      const loadB = judgeLoads.get(b) || 0;
+      if (loadA !== loadB) {
+        return loadA - loadB;
+      }
+      return a.localeCompare(b);
     });
 
-    // Sort eligible judges by lowest current load (Greedy load balancing)
-    eligibleJudges.sort((a: { id: string }, b: { id: string }) => {
-      return (judgeLoads.get(a.id) || 0) - (judgeLoads.get(b.id) || 0);
-    });
+    // Select the k least loaded judges
+    const selectedJudges = candidates.slice(0, k);
 
-    const selectedJudges = eligibleJudges.slice(0, needed);
-    if (selectedJudges.length < needed) {
-      skippedDueToConflict += needed - selectedJudges.length;
-    }
-
-    for (const judge of selectedJudges) {
-      await client.judgeAssignment.create({
-        data: {
-          judgeId: judge.id,
-          submissionId: sub.id,
-          isCompleted: false,
-        },
-      });
-      judgeLoads.set(judge.id, (judgeLoads.get(judge.id) || 0) + 1);
-      assignedCount++;
+    for (const judgeId of selectedJudges) {
+      assignments.push({ judgeId, submissionId: subId });
+      judgeLoads.set(judgeId, (judgeLoads.get(judgeId) || 0) + 1);
     }
   }
 
-  return {
-    assignedCount,
-    skippedDueToConflict,
-    totalSubmissions: submissions.length,
-    activeJudges: judges.length,
-  };
+  return assignments;
 }
 
 /**
- * Fetch all assignments assigned to a judge, including rubric and submission details.
+ * Pure function for manual judge assignment.
+ * Checks for duplicates and returns the updated assignment list.
  */
-export async function getJudgeAssignments(
+export function manualAssign(
+  existingAssignments: Assignment[],
   judgeId: string,
-  eventId?: string,
-  prismaClient?: any
-) {
-  const client = await getDb(prismaClient);
-  const whereClause: any = { judgeId };
-  if (eventId) {
-    whereClause.submission = { eventId };
+  submissionId: string
+): Assignment[] {
+  const exists = existingAssignments.some(
+    (a) => a.judgeId === judgeId && a.submissionId === submissionId
+  );
+
+  if (exists) {
+    throw new Error(
+      `Assignment already exists: Judge ${judgeId} is already assigned to submission ${submissionId}.`
+    );
   }
 
-  return await client.judgeAssignment.findMany({
-    where: whereClause,
-    include: {
-      submission: {
-        include: {
-          track: true,
-          team: {
-            select: { id: true, name: true },
-          },
-        },
-      },
-      scores: {
-        include: {
-          criterion: true,
-        },
-      },
-    },
-    orderBy: [{ isCompleted: "asc" }, { createdAt: "asc" }],
-  });
+  return [...existingAssignments, { judgeId, submissionId }];
 }
 
 /**
- * Retrieve judge progress across an event.
+ * Pure function to remove an assignment manually.
  */
-export async function getJudgeProgressList(
-  eventId: string,
-  prismaClient?: any
-): Promise<AssignmentProgress[]> {
-  const client = await getDb(prismaClient);
-  const judges = await client.user.findMany({
-    where: {
-      role: { in: ["JUDGE", "ORGANIZER", "ADMIN"] },
-    },
-    include: {
-      assignments: {
-        where: {
-          submission: { eventId },
-        },
-      },
-    },
-  });
+export function removeAssignment(
+  existingAssignments: Assignment[],
+  judgeId: string,
+  submissionId: string
+): Assignment[] {
+  return existingAssignments.filter(
+    (a) => !(a.judgeId === judgeId && a.submissionId === submissionId)
+  );
+}
 
-  return judges.map((j: { id: string; name: string; email: string; assignments: any[] }) => {
-    const totalAssigned = j.assignments.length;
-    const completed = j.assignments.filter((a: any) => a.isCompleted).length;
-    const pending = totalAssigned - completed;
-    const completionRate = totalAssigned > 0 ? Math.round((completed / totalAssigned) * 100) : 0;
+/**
+ * Compute workload distribution summary to verify +/-1 balance.
+ */
+export function getJudgeLoadSummaries(
+  judges: string[],
+  assignments: Assignment[]
+): JudgeLoadSummary[] {
+  const countMap = new Map<string, number>();
+  for (const j of judges) {
+    countMap.set(j, 0);
+  }
 
-    return {
-      judgeId: j.id,
-      judgeName: j.name || "Anonymous Judge",
-      judgeEmail: j.email,
-      totalAssigned,
-      completed,
-      pending,
-      completionRate,
-    };
-  });
+  for (const a of assignments) {
+    countMap.set(a.judgeId, (countMap.get(a.judgeId) || 0) + 1);
+  }
+
+  return judges.map((j) => ({
+    judgeId: j,
+    assignedCount: countMap.get(j) || 0,
+  }));
 }

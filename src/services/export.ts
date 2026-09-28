@@ -1,17 +1,8 @@
-import { getEventNormalizedStandings } from "./normalization.ts";
-import { getJudgeProgressList } from "./assignment.ts";
-
-// Lazy-loaded Prisma database client to support offline unit testing and modular development
-async function getDb(overrideClient?: any) {
-  if (overrideClient) return overrideClient;
-  try {
-    // @ts-ignore
-    const dbModule = await import("../lib/db");
-    return dbModule.db;
-  } catch {
-    throw new Error("Database client (src/lib/db) is not yet initialized by Person A.");
-  }
-}
+/**
+ * Pure CSV export logic for hackathon judging data.
+ * Adheres strictly to RFC 4180 with UTF-8 BOM for cross-platform Excel compatibility.
+ * Zero database dependencies.
+ */
 
 /**
  * Escapes a field according to RFC 4180 standards.
@@ -21,7 +12,6 @@ export function escapeCsvField(val: unknown): string {
     return "";
   }
   const str = String(val);
-  // If the string contains comma, double-quote, or newline, wrap in quotes and double internal quotes
   if (/[",\n\r]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
   }
@@ -29,171 +19,126 @@ export function escapeCsvField(val: unknown): string {
 }
 
 /**
- * Formats rows into an RFC 4180 CSV string with UTF-8 BOM.
+ * Formats headers and rows into an RFC 4180 CSV string with UTF-8 BOM.
  */
-export function buildCsv(headers: string[], rows: (string | number | null | undefined)[][]): string {
+export function buildCsv(
+  headers: string[],
+  rows: (string | number | null | undefined)[][]
+): string {
   const headerLine = headers.map(escapeCsvField).join(",");
   const dataLines = rows.map((row) => row.map(escapeCsvField).join(","));
   return "\uFEFF" + [headerLine, ...dataLines].join("\r\n");
 }
 
-/**
- * Export final leaderboard & normalized standings as CSV.
- */
-export async function exportLeaderboardCsv(eventId: string, prismaClient?: any): Promise<string> {
-  const standingsData = await getEventNormalizedStandings(eventId, 75, 15, prismaClient);
+export interface AssignmentExportRow {
+  judgeId: string;
+  judgeName?: string;
+  submissionId: string;
+  submissionTitle?: string;
+  isCompleted?: boolean;
+}
 
-  const headers = [
-    "Overall Rank",
-    "Track Rank",
-    "Submission ID",
-    "Title",
-    "Track",
-    "Team Name",
-    "Raw Average Score",
-    "Normalized Score",
-    "Completed Judges",
-    "Total Assigned Judges",
-  ];
+export interface RawScoreExportRow {
+  judgeId: string;
+  judgeName?: string;
+  submissionId: string;
+  submissionTitle?: string;
+  criterionName: string;
+  value: number;
+  maxScore: number;
+  weight: number;
+}
 
-  const rows = standingsData.standings.map((s) => [
-    s.rank,
-    s.trackRank,
-    s.submissionId,
-    s.title,
-    s.trackName || "General",
-    s.teamName || "Independent",
-    s.rawAverage.toFixed(2),
-    s.normalizedScore.toFixed(2),
-    s.completedJudgesCount,
-    s.totalJudgesCount,
-  ]);
-
-  return buildCsv(headers, rows);
+export interface NormalizedResultExportRow {
+  rank: number;
+  submissionId: string;
+  submissionTitle?: string;
+  trackName?: string;
+  rawAverage: number;
+  normalizedScore: number;
+  judgeCount: number;
 }
 
 /**
- * Export criterion-level detailed scores across all judges for auditing.
+ * Generates CSV for Judge Assignments.
  */
-export async function exportDetailedScoresCsv(eventId: string, prismaClient?: any): Promise<string> {
-  const client = await getDb(prismaClient);
-  const assignments = await client.judgeAssignment.findMany({
-    where: {
-      submission: { eventId },
-    },
-    include: {
-      judge: { select: { id: true, name: true, email: true } },
-      submission: {
-        include: {
-          track: true,
-          team: { select: { name: true } },
-        },
-      },
-      scores: {
-        include: {
-          criterion: true,
-        },
-      },
-    },
-    orderBy: [{ submissionId: "asc" }, { judgeId: "asc" }],
+export function generateAssignmentsCsv(rows: AssignmentExportRow[]): string {
+  const headers = [
+    "Judge ID",
+    "Judge Name",
+    "Submission ID",
+    "Submission Title",
+    "Status",
+  ];
+
+  const data = rows.map((r) => [
+    r.judgeId,
+    r.judgeName || "N/A",
+    r.submissionId,
+    r.submissionTitle || "N/A",
+    r.isCompleted ? "COMPLETED" : "PENDING",
+  ]);
+
+  return buildCsv(headers, data);
+}
+
+/**
+ * Generates CSV for Line-Item Raw Scores across criteria.
+ */
+export function generateRawScoresCsv(rows: RawScoreExportRow[]): string {
+  const headers = [
+    "Judge ID",
+    "Judge Name",
+    "Submission ID",
+    "Submission Title",
+    "Criterion Name",
+    "Score Value",
+    "Max Score",
+    "Weight",
+    "Percentage",
+  ];
+
+  const data = rows.map((r) => {
+    const pct = r.maxScore > 0 ? ((r.value / r.maxScore) * 100).toFixed(2) : "0.00";
+    return [
+      r.judgeId,
+      r.judgeName || "N/A",
+      r.submissionId,
+      r.submissionTitle || "N/A",
+      r.criterionName,
+      r.value,
+      r.maxScore,
+      r.weight,
+      `${pct}%`,
+    ];
   });
 
+  return buildCsv(headers, data);
+}
+
+/**
+ * Generates CSV for Normalized Standings & Results.
+ */
+export function generateNormalizedResultsCsv(rows: NormalizedResultExportRow[]): string {
   const headers = [
+    "Rank",
     "Submission ID",
     "Submission Title",
     "Track",
-    "Team Name",
-    "Judge ID",
-    "Judge Name",
-    "Judge Email",
-    "Assignment Completed",
-    "Criterion ID",
-    "Criterion Name",
-    "Criterion Weight",
-    "Score Value",
-    "Max Score",
-    "Normalized Percentage For Criterion",
-    "Scored At",
+    "Raw Average Score",
+    "Normalized Score",
+    "Total Judges",
   ];
 
-  const rows: (string | number | null | undefined)[][] = [];
-
-  for (const a of assignments) {
-    if (!a.scores || a.scores.length === 0) {
-      rows.push([
-        a.submission.id,
-        a.submission.title,
-        a.submission.track?.name || "General",
-        a.submission.team?.name || "Independent",
-        a.judge.id,
-        a.judge.name || "Anonymous",
-        a.judge.email,
-        a.isCompleted ? "YES" : "NO",
-        "N/A",
-        "No scores entered",
-        0,
-        0,
-        0,
-        0,
-        "",
-      ]);
-      continue;
-    }
-
-    for (const score of a.scores) {
-      const pct =
-        score.criterion.maxScore > 0
-          ? ((score.value / score.criterion.maxScore) * 100).toFixed(2)
-          : "0.00";
-
-      rows.push([
-        a.submission.id,
-        a.submission.title,
-        a.submission.track?.name || "General",
-        a.submission.team?.name || "Independent",
-        a.judge.id,
-        a.judge.name || "Anonymous",
-        a.judge.email,
-        a.isCompleted ? "YES" : "NO",
-        score.criterion.id,
-        score.criterion.name,
-        score.criterion.weight,
-        score.value,
-        score.criterion.maxScore,
-        pct,
-        score.updatedAt ? new Date(score.updatedAt).toISOString() : "",
-      ]);
-    }
-  }
-
-  return buildCsv(headers, rows);
-}
-
-/**
- * Export judge evaluation progress and workload statistics.
- */
-export async function exportJudgeProgressCsv(eventId: string, prismaClient?: any): Promise<string> {
-  const progressList = await getJudgeProgressList(eventId, prismaClient);
-
-  const headers = [
-    "Judge ID",
-    "Judge Name",
-    "Judge Email",
-    "Total Assigned",
-    "Completed",
-    "Pending",
-    "Completion Rate (%)",
-  ];
-
-  const rows = progressList.map((j) => [
-    j.judgeId,
-    j.judgeName,
-    j.judgeEmail,
-    j.totalAssigned,
-    j.completed,
-    j.pending,
-    `${j.completionRate}%`,
+  const data = rows.map((r) => [
+    r.rank,
+    r.submissionId,
+    r.submissionTitle || "N/A",
+    r.trackName || "General",
+    r.rawAverage.toFixed(2),
+    r.normalizedScore.toFixed(2),
+    r.judgeCount,
   ]);
 
-  return buildCsv(headers, rows);
+  return buildCsv(headers, data);
 }
