@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { isSubmissionWindowOpen } from '../src/services/events'
+import { isSubmissionWindowOpen, createEvent, deleteTrack, deletePrize } from '../src/services/events'
 import { EventStatus, SubmissionStatus } from '@prisma/client'
 
 // Mock prisma client for service unit & API tests
@@ -9,9 +9,20 @@ vi.mock('@/lib/db', () => {
       event: {
         findUnique: vi.fn(),
         findFirst: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      track: {
+        create: vi.fn(),
+        delete: vi.fn(),
+      },
+      prize: {
+        create: vi.fn(),
+        delete: vi.fn(),
       },
       team: {
         findUnique: vi.fn(),
+        create: vi.fn(),
       },
       teamMember: {
         findUnique: vi.fn(),
@@ -33,7 +44,7 @@ vi.mock('@/lib/db', () => {
 })
 
 import prisma from '@/lib/db'
-import { joinTeamByInviteCode } from '../src/services/teams'
+import { createTeam, joinTeamByInviteCode } from '../src/services/teams'
 import { upsertSubmission } from '../src/services/submissions'
 import { getPublicGallerySubmissions } from '../src/services/gallery'
 
@@ -42,8 +53,8 @@ describe('T1 API & Business Logic Requirements', () => {
     vi.clearAllMocks()
   })
 
-  // 1. Deadline enforcement
-  describe('1. Deadline Enforcement', () => {
+  // 1. Deadline enforcement & Events Management
+  describe('1. Deadline Enforcement & Events Management', () => {
     it('rejects submission creation/edit after deadline with status 403', async () => {
       const pastDeadline = new Date(Date.now() - 3600 * 1000) // 1 hour ago
 
@@ -100,10 +111,72 @@ describe('T1 API & Business Logic Requirements', () => {
         })
       ).toBe(false)
     })
+
+    it('organizer creates event with tracks and prizes successfully', async () => {
+      vi.mocked(prisma.event.create).mockResolvedValue({
+        id: 'event-new',
+        name: 'New Hackathon',
+        description: 'Building tools',
+        startsAt: new Date(),
+        endsAt: new Date(),
+        submissionDeadline: new Date(),
+        status: EventStatus.ACTIVE,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        tracks: [{ id: 'tr-1', eventId: 'event-new', name: 'AI', description: 'AI Track' }],
+        prizes: [{ id: 'pz-1', eventId: 'event-new', title: '1st', amount: '$1000', description: null }],
+      } as any)
+
+      const event = await createEvent(
+        {
+          name: 'New Hackathon',
+          startsAt: new Date(),
+          endsAt: new Date(),
+          submissionDeadline: new Date(),
+          tracks: [{ name: 'AI', description: 'AI Track' }],
+          prizes: [{ title: '1st', amount: '$1000' }],
+        },
+        'org-user-1'
+      )
+
+      expect(prisma.event.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            name: 'New Hackathon',
+            tracks: expect.anything(),
+            prizes: expect.anything(),
+          }),
+        })
+      )
+      expect(event.id).toBe('event-new')
+    })
+
+    it('organizer can delete track and prize', async () => {
+      vi.mocked(prisma.track.delete).mockResolvedValue({
+        id: 'trk-del',
+        eventId: 'e-1',
+        name: 'Delete Track',
+        description: null,
+      })
+
+      vi.mocked(prisma.prize.delete).mockResolvedValue({
+        id: 'prz-del',
+        eventId: 'e-1',
+        title: 'Delete Prize',
+        amount: null,
+        description: null,
+      })
+
+      const track = await deleteTrack('trk-del', 'org-1')
+      expect(track.id).toBe('trk-del')
+
+      const prize = await deletePrize('prz-del', 'org-1')
+      expect(prize.id).toBe('prz-del')
+    })
   })
 
-  // 2. Team size limit (max 4 members)
-  describe('2. Team Size Limit', () => {
+  // 2. Team size limit (max 4 members) & one team per user
+  describe('2. Team Size Limit and Formation', () => {
     it('rejects joining a team that already has 4 members with status 409', async () => {
       vi.mocked(prisma.team.findUnique).mockResolvedValue({
         id: 'team-full',
@@ -168,6 +241,31 @@ describe('T1 API & Business Logic Requirements', () => {
       ).rejects.toMatchObject({
         statusCode: 409,
         message: expect.stringContaining('You are already in team "Team Alpha" for this event'),
+      })
+    })
+
+    it('rejects creating a team if user is already a member of a team in that event with status 409', async () => {
+      vi.mocked(prisma.teamMember.findFirst).mockResolvedValue({
+        id: 'tm-existing',
+        teamId: 'team-old',
+        userId: 'user-already-joined',
+        joinedAt: new Date(),
+        team: {
+          id: 'team-old',
+          name: 'Old Team',
+          eventId: 'event-1',
+        },
+      } as any)
+
+      await expect(
+        createTeam({
+          eventId: 'event-1',
+          name: 'New Team Attempt',
+          creatorUserId: 'user-already-joined',
+        })
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        message: expect.stringContaining('already a member of team "Old Team"'),
       })
     })
   })

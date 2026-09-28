@@ -1,7 +1,7 @@
 # Dogfood Hackathon Platform 🚀
 > Open-source, 100% self-hostable hackathon submission and judging platform built for the 72h Among-Us Hackathon challenge.
 
-[![Tests](https://img.shields.io/badge/tests-18%20passed-emerald)](file:///tests)
+[![Tests](https://img.shields.io/badge/tests-21%20passed-emerald)](file:///tests)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20|%20TypeScript%20|%20Prisma%20|%20PostgreSQL-indigo)](#tech-stack)
 [![Air--Gapped](https://img.shields.io/badge/offline-100%25%20air--gapped%20ready-cyan)](#hard-requirements)
 
@@ -154,13 +154,16 @@ All business logic and security boundaries are covered by unit and integration t
 npm test
 ```
 
-### Verified Test Suites (18 Passed):
-1. **Deadline Enforcement** (`tests/dogfood-t1-api.test.ts` & `tests/events.test.ts`):
+### Verified Test Suites (21 Passed):
+1. **Deadline Enforcement & Events Management** (`tests/dogfood-t1-api.test.ts` & `tests/events.test.ts`):
    - Confirms backend rejects submission create/edit after `submissionDeadline` with HTTP `403`.
    - Confirms `isSubmissionWindowOpen` returns false for past deadlines or closed events.
-2. **Team Size Limit** (`tests/dogfood-t1-api.test.ts`):
+   - Confirms organizer can create events with tracks and prizes.
+   - Confirms organizer can delete tracks and prizes dynamically.
+2. **Team Size Limit & Formation** (`tests/dogfood-t1-api.test.ts`):
    - Confirms backend rejects 5th member joining a 4-member team with HTTP `409`.
    - Confirms backend rejects users attempting to join multiple teams in the same event with HTTP `409`.
+   - Confirms backend rejects creating a team when already in one for that event with HTTP `409`.
 3. **Non-Member Submission Control** (`tests/dogfood-t1-api.test.ts`):
    - Confirms non-team-members cannot create or edit submissions (HTTP `403`).
 4. **Gallery Draft Filtering** (`tests/dogfood-t1-api.test.ts`):

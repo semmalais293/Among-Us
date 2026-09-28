@@ -30,7 +30,13 @@ export default function RegisterPage() {
         throw new Error(data.error || 'Failed to register')
       }
 
-      if (role === 'JUDGE') {
+      // Check redirect param
+      const searchParams = new URLSearchParams(window.location.search)
+      const redirectUrl = searchParams.get('redirect')
+
+      if (redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//')) {
+        router.push(redirectUrl)
+      } else if (role === 'JUDGE') {
         router.push('/judge')
       } else {
         router.push('/participant')

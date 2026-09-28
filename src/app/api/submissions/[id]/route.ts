@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { handleApiError, requireRole } from '@/lib/permissions'
-import { getSubmission } from '@/services/submissions'
+import { getSubmission, upsertSubmission } from '@/services/submissions'
+import { SubmissionStatus } from '@prisma/client'
 
 export async function GET(
   req: NextRequest,
@@ -19,3 +20,48 @@ export async function GET(
     return handleApiError(error)
   }
 }
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await requireRole(['PARTICIPANT', 'ORGANIZER', 'ADMIN'], req)
+    const body = await req.json()
+    const {
+      teamId,
+      eventId,
+      title,
+      description,
+      repoUrl,
+      demoUrl,
+      trackId,
+      status,
+    } = body
+
+    if (!teamId || !eventId || !title || !description) {
+      return NextResponse.json(
+        { error: 'teamId, eventId, title, and description are required' },
+        { status: 400 }
+      )
+    }
+
+    const submission = await upsertSubmission({
+      submissionId: params.id,
+      teamId,
+      eventId,
+      userId: user.id,
+      title,
+      description,
+      repoUrl,
+      demoUrl,
+      trackId,
+      status: status === 'SUBMITTED' ? SubmissionStatus.SUBMITTED : SubmissionStatus.DRAFT,
+    })
+
+    return NextResponse.json({ submission })
+  } catch (error) {
+    return handleApiError(error)
+  }
+}
+

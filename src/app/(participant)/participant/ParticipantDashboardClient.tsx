@@ -255,15 +255,21 @@ export default function ParticipantDashboardClient({
               <h3 className="text-2xl font-black text-white mt-1">{team.name}</h3>
             </div>
 
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-400">Invite Code:</span>
-              <span
-                id="team-invite-code-badge"
-                className="font-mono text-sm font-bold text-cyan-400 bg-cyan-950/60 border border-cyan-500/30 px-3 py-1 rounded-lg"
-              >
-                {team.inviteCode}
-              </span>
-              <CopyButton text={team.inviteCode} label="Copy Code" />
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Invite Code:</span>
+                <span
+                  id="team-invite-code-badge"
+                  className="font-mono text-sm font-bold text-cyan-400 bg-cyan-950/60 border border-cyan-500/30 px-3 py-1 rounded-lg"
+                >
+                  {team.inviteCode}
+                </span>
+                <CopyButton text={team.inviteCode} label="Copy Code" />
+              </div>
+              <CopyButton
+                text={typeof window !== 'undefined' ? `${window.location.origin}/join/${team.inviteCode}` : `/join/${team.inviteCode}`}
+                label="Copy Invite Link"
+              />
             </div>
           </div>
 

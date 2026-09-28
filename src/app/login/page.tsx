@@ -28,14 +28,22 @@ export default function LoginPage() {
         throw new Error(data.error || 'Failed to sign in')
       }
 
-      // Route based on role
-      const userRole = data.user?.role
-      if (userRole === 'ORGANIZER' || userRole === 'ADMIN') {
-        router.push('/organizer')
-      } else if (userRole === 'JUDGE') {
-        router.push('/judge')
+      // Check redirect param
+      const searchParams = new URLSearchParams(window.location.search)
+      const redirectUrl = searchParams.get('redirect')
+
+      if (redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//')) {
+        router.push(redirectUrl)
       } else {
-        router.push('/participant')
+        // Route based on role
+        const userRole = data.user?.role
+        if (userRole === 'ORGANIZER' || userRole === 'ADMIN') {
+          router.push('/organizer')
+        } else if (userRole === 'JUDGE') {
+          router.push('/judge')
+        } else {
+          router.push('/participant')
+        }
       }
       router.refresh()
     } catch (err) {

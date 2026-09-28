@@ -34,7 +34,9 @@ export async function createTeam(params: {
   })
 
   if (existingMembership) {
-    throw new Error(`You are already a member of team "${existingMembership.team.name}" for this event.`)
+    const error = new Error(`You are already a member of team "${existingMembership.team.name}" for this event.`)
+    ;(error as any).statusCode = 409
+    throw error
   }
 
   // Generate unique invite code

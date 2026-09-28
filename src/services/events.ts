@@ -238,6 +238,24 @@ export async function addTrack(eventId: string, name: string, description?: stri
   })
 }
 
+export async function deleteTrack(trackId: string, actorId: string) {
+  const track = await prisma.track.delete({
+    where: { id: trackId },
+  })
+
+  await prisma.auditLog.create({
+    data: {
+      actorId,
+      action: 'TRACK_DELETED',
+      entity: 'Track',
+      entityId: track.id,
+      metadata: JSON.stringify({ name: track.name }),
+    },
+  })
+
+  return track
+}
+
 export async function addPrize(eventId: string, title: string, amount?: string, description?: string) {
   return prisma.prize.create({
     data: {
@@ -248,3 +266,22 @@ export async function addPrize(eventId: string, title: string, amount?: string, 
     },
   })
 }
+
+export async function deletePrize(prizeId: string, actorId: string) {
+  const prize = await prisma.prize.delete({
+    where: { id: prizeId },
+  })
+
+  await prisma.auditLog.create({
+    data: {
+      actorId,
+      action: 'PRIZE_DELETED',
+      entity: 'Prize',
+      entityId: prize.id,
+      metadata: JSON.stringify({ title: prize.title }),
+    },
+  })
+
+  return prize
+}
+

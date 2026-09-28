@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
         endsAt: new Date(body.endsAt),
         submissionDeadline: new Date(body.submissionDeadline),
         status: body.status,
+        tracks: Array.isArray(body.tracks) ? body.tracks : undefined,
+        prizes: Array.isArray(body.prizes) ? body.prizes : undefined,
       },
       user.id
     )
