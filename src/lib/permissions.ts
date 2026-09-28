@@ -74,11 +74,15 @@ export async function requireRole(
 }
 
 /**
- * Convenience wrapper to return appropriate JSON error responses for AuthError
+ * Convenience wrapper to return appropriate JSON error responses for AuthError and HTTP status codes
  */
 export function handleApiError(error: unknown): NextResponse {
   if (error instanceof AuthError) {
     return NextResponse.json({ error: error.message }, { status: error.statusCode })
+  }
+  const anyError = error as { statusCode?: number; message?: string }
+  if (typeof anyError?.statusCode === 'number') {
+    return NextResponse.json({ error: anyError.message || 'Error' }, { status: anyError.statusCode })
   }
   const message = error instanceof Error ? error.message : 'Internal Server Error'
   return NextResponse.json({ error: message }, { status: 500 })

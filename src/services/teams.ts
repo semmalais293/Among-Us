@@ -118,6 +118,13 @@ export async function joinTeamByInviteCode(params: {
     return team
   }
 
+  // Check if team is full (max 4 members)
+  if (team.members.length >= 4) {
+    const error = new Error('Team is full: Maximum 4 members allowed per team.')
+    ;(error as any).statusCode = 409
+    throw error
+  }
+
   // Check if user is already in another team for this same event
   const existingMembershipInEvent = await prisma.teamMember.findFirst({
     where: {
@@ -132,9 +139,11 @@ export async function joinTeamByInviteCode(params: {
   })
 
   if (existingMembershipInEvent) {
-    throw new Error(
+    const error = new Error(
       `You are already in team "${existingMembershipInEvent.team.name}" for this event. Leave that team first to join another.`
     )
+    ;(error as any).statusCode = 409
+    throw error
   }
 
   // Add user to team
