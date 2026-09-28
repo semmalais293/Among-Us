@@ -8,6 +8,8 @@ export interface CreateEventInput {
   endsAt: Date
   submissionDeadline: Date
   status?: EventStatus
+  tracks?: Array<{ name: string; description?: string }>
+  prizes?: Array<{ title: string; amount?: string; description?: string }>
 }
 
 export interface UpdateEventInput {
@@ -17,6 +19,8 @@ export interface UpdateEventInput {
   endsAt?: Date
   submissionDeadline?: Date
   status?: EventStatus
+  tracks?: Array<{ name: string; description?: string }>
+  prizes?: Array<{ title: string; amount?: string; description?: string }>
 }
 
 /**
@@ -128,6 +132,31 @@ export async function createEvent(data: CreateEventInput, actorId: string) {
       endsAt: data.endsAt,
       submissionDeadline: data.submissionDeadline,
       status: data.status || EventStatus.UPCOMING,
+      ...(data.tracks && data.tracks.length > 0
+        ? {
+            tracks: {
+              create: data.tracks.map((t) => ({
+                name: t.name,
+                description: t.description,
+              })),
+            },
+          }
+        : {}),
+      ...(data.prizes && data.prizes.length > 0
+        ? {
+            prizes: {
+              create: data.prizes.map((p) => ({
+                title: p.title,
+                amount: p.amount,
+                description: p.description,
+              })),
+            },
+          }
+        : {}),
+    },
+    include: {
+      tracks: true,
+      prizes: true,
     },
   })
 
@@ -152,9 +181,38 @@ export async function updateEvent(
   data: UpdateEventInput,
   actorId: string
 ) {
+  const { tracks, prizes, ...fields } = data
+
   const event = await prisma.event.update({
     where: { id: eventId },
-    data,
+    data: {
+      ...fields,
+      ...(tracks && tracks.length > 0
+        ? {
+            tracks: {
+              create: tracks.map((t) => ({
+                name: t.name,
+                description: t.description,
+              })),
+            },
+          }
+        : {}),
+      ...(prizes && prizes.length > 0
+        ? {
+            prizes: {
+              create: prizes.map((p) => ({
+                title: p.title,
+                amount: p.amount,
+                description: p.description,
+              })),
+            },
+          }
+        : {}),
+    },
+    include: {
+      tracks: true,
+      prizes: true,
+    },
   })
 
   await prisma.auditLog.create({
@@ -168,4 +226,25 @@ export async function updateEvent(
   })
 
   return event
+}
+
+export async function addTrack(eventId: string, name: string, description?: string) {
+  return prisma.track.create({
+    data: {
+      eventId,
+      name,
+      description,
+    },
+  })
+}
+
+export async function addPrize(eventId: string, title: string, amount?: string, description?: string) {
+  return prisma.prize.create({
+    data: {
+      eventId,
+      title,
+      amount,
+      description,
+    },
+  })
 }

@@ -161,6 +161,54 @@ export default function OrganizerDashboardClient({
         </form>
       </div>
 
+      {/* Tracks & Prizes Management */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Tracks Management */}
+        <div className="glass-panel p-6 rounded-2xl border border-slate-800">
+          <h3 className="text-base font-bold text-white mb-2">Event Tracks ({event.tracks?.length || 0})</h3>
+          <p className="text-xs text-slate-400 mb-4">
+            Active competition categories available for participant submissions.
+          </p>
+
+          <div className="space-y-2 mb-4 max-h-48 overflow-y-auto pr-1">
+            {event.tracks && event.tracks.length > 0 ? (
+              event.tracks.map((t: any) => (
+                <div key={t.id} className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
+                  <div className="font-semibold text-indigo-400">{t.name}</div>
+                  {t.description && <div className="text-slate-400 mt-0.5">{t.description}</div>}
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-slate-500 italic">No tracks created yet.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Prizes Management */}
+        <div className="glass-panel p-6 rounded-2xl border border-slate-800">
+          <h3 className="text-base font-bold text-white mb-2">Prize Pool ({event.prizes?.length || 0})</h3>
+          <p className="text-xs text-slate-400 mb-4">
+            Awards and honors configured for top-scoring submissions.
+          </p>
+
+          <div className="space-y-2 mb-4 max-h-48 overflow-y-auto pr-1">
+            {event.prizes && event.prizes.length > 0 ? (
+              event.prizes.map((p: any) => (
+                <div key={p.id} className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold text-white">{p.title}</div>
+                    {p.description && <div className="text-slate-400 mt-0.5">{p.description}</div>}
+                  </div>
+                  {p.amount && <div className="font-mono text-emerald-400 font-bold shrink-0">{p.amount}</div>}
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-slate-500 italic">No prizes created yet.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Submissions & Teams Master Table */}
       <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
         <div className="p-6 border-b border-slate-800/80">

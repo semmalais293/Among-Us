@@ -51,7 +51,9 @@ export async function upsertSubmission(input: UpsertSubmissionInput) {
   })
 
   if (!isMember) {
-    throw new Error('Unauthorized: You must be a verified member of this team to manage its submission.')
+    const error = new Error('Unauthorized: You must be a verified member of this team to manage its submission.')
+    ;(error as any).statusCode = 403
+    throw error
   }
 
   // 2. Verify Event and Deadline Enforcement
@@ -60,14 +62,18 @@ export async function upsertSubmission(input: UpsertSubmissionInput) {
   })
 
   if (!event) {
-    throw new Error('Event not found')
+    const error = new Error('Event not found')
+    ;(error as any).statusCode = 404
+    throw error
   }
 
   const isOpen = isSubmissionWindowOpen(event)
   if (!isOpen) {
-    throw new Error(
+    const error = new Error(
       `Submission deadline passed at ${new Date(event.submissionDeadline).toISOString()}. New submissions and edits are closed.`
     )
+    ;(error as any).statusCode = 403
+    throw error
   }
 
   // 3. Validate track belongs to event if provided
