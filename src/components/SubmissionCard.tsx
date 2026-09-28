@@ -14,6 +14,7 @@ interface SubmissionCardProps {
 }
 
 export default function SubmissionCard({
+  id,
   title,
   description,
   teamName,
@@ -85,7 +86,7 @@ export default function SubmissionCard({
         </div>
 
         <Link
-          href={`/gallery?id=${encodeURIComponent(title)}`}
+          href={`/gallery/${id}`}
           className="text-slate-400 hover:text-white font-semibold transition-colors"
         >
           View details &rarr;
