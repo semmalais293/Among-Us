@@ -18,7 +18,7 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql://dogfood:${POSTGRES_PASSWORD:-dogfood-local-password}@db:5432/dogfood?schema=public
-      SESSION_SECRET: ${SESSION_SECRET:-replace-this-local-development-secret}
+      SESSION_SECRET: ${SESSION_SECRET:-dogfood-local-development-secret-for-docker}
       NODE_ENV: production
     ports:
       - "${APP_PORT:-3000}:3000"
