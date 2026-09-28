@@ -189,7 +189,8 @@ async function main() {
   }[] = [];
 
   for (const [index, team] of teams.entries()) {
-    for (const offset of [0, 1]) {
+    const projectOffsets = index < 2 ? [0, 1, 2] : [0, 1];
+    for (const offset of projectOffsets) {
       const slug = team.name.toLowerCase().replace(/\s+/g, "-");
       const submission = await prisma.submission.upsert({
         where: { id: `submission-${slug}-${offset}` },

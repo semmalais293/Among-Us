@@ -10,4 +10,4 @@ COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate && npm run build
 EXPOSE 3000
-CMD ["sh", "-c", "npm run db:setup && npm run start"]
+CMD ["sh", "-c", "npm run db:migrate && npm run db:seed && npm run start"]
