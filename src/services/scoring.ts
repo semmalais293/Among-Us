@@ -1,4 +1,14 @@
-import { db } from "../lib/db";
+// Lazy-loaded Prisma database client to support offline unit testing and modular development
+async function getDb(overrideClient?: any) {
+  if (overrideClient) return overrideClient;
+  try {
+    // @ts-ignore
+    const dbModule = await import("../lib/db");
+    return dbModule.db;
+  } catch {
+    throw new Error("Database client (src/lib/db) is not yet initialized by Person A.");
+  }
+}
 
 export interface CriterionScoreInput {
   criterionId: string;
@@ -63,12 +73,13 @@ export function calculateWeightedScore(
  */
 export async function submitAssignmentScores(
   params: SubmitScoresParams,
-  prismaClient = db
+  prismaClient?: any
 ): Promise<WeightedScoreResult> {
+  const client = await getDb(prismaClient);
   const { assignmentId, judgeId, scores, feedback, isDraft = false } = params;
 
   // 1. Verify assignment exists and belongs to the judge
-  const assignment = await prismaClient.judgeAssignment.findUnique({
+  const assignment = await client.judgeAssignment.findUnique({
     where: { id: assignmentId },
     include: {
       submission: {
@@ -136,7 +147,7 @@ export async function submitAssignmentScores(
   const shouldComplete = !isDraft && allCriteriaAnswered;
 
   // 4. Save scores in transaction
-  await prismaClient.$transaction(async (tx: any) => {
+  await client.$transaction(async (tx: any) => {
     for (const input of scores) {
       await tx.score.upsert({
         where: {
@@ -199,9 +210,10 @@ export async function submitAssignmentScores(
 export async function getAssignmentScoringDetails(
   assignmentId: string,
   judgeId: string,
-  prismaClient = db
+  prismaClient?: any
 ) {
-  const assignment = await prismaClient.judgeAssignment.findUnique({
+  const client = await getDb(prismaClient);
+  const assignment = await client.judgeAssignment.findUnique({
     where: { id: assignmentId },
     include: {
       submission: {

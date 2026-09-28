@@ -1,4 +1,14 @@
-import { db } from "../lib/db";
+// Lazy-loaded Prisma database client to support offline unit testing and modular development
+async function getDb(overrideClient?: any) {
+  if (overrideClient) return overrideClient;
+  try {
+    // @ts-ignore
+    const dbModule = await import("../lib/db");
+    return dbModule.db;
+  } catch {
+    throw new Error("Database client (src/lib/db) is not yet initialized by Person A.");
+  }
+}
 
 export interface CreateAssignmentParams {
   judgeId: string;
@@ -27,12 +37,13 @@ export interface AssignmentProgress {
  */
 export async function assignJudgeToSubmission(
   params: CreateAssignmentParams,
-  prismaClient = db
+  prismaClient?: any
 ) {
+  const client = await getDb(prismaClient);
   const { judgeId, submissionId } = params;
 
   // 1. Fetch submission with team members to check conflict of interest
-  const submission = await prismaClient.submission.findUnique({
+  const submission = await client.submission.findUnique({
     where: { id: submissionId },
     include: {
       team: {
@@ -99,12 +110,13 @@ export async function assignJudgeToSubmission(
  */
 export async function autoAssignJudges(
   params: AutoAssignParams,
-  prismaClient = db
+  prismaClient?: any
 ) {
+  const client = await getDb(prismaClient);
   const { eventId, judgesPerSubmission = 3, trackId } = params;
 
   // 1. Find all active judges for the event
-  const judges = await prismaClient.user.findMany({
+  const judges = await client.user.findMany({
     where: {
       role: { in: ["JUDGE", "ORGANIZER", "ADMIN"] },
     },
@@ -128,7 +140,7 @@ export async function autoAssignJudges(
     submissionFilter.trackId = trackId;
   }
 
-  const submissions = await prismaClient.submission.findMany({
+  const submissions = await client.submission.findMany({
     where: submissionFilter,
     include: {
       team: {
@@ -151,7 +163,7 @@ export async function autoAssignJudges(
   }
 
   // Count existing assignments across the event
-  const existingAssignments = await prismaClient.judgeAssignment.findMany({
+  const existingAssignments = await client.judgeAssignment.findMany({
     where: {
       submission: {
         eventId,
@@ -194,7 +206,7 @@ export async function autoAssignJudges(
     }
 
     for (const judge of selectedJudges) {
-      await prismaClient.judgeAssignment.create({
+      await client.judgeAssignment.create({
         data: {
           judgeId: judge.id,
           submissionId: sub.id,
@@ -220,14 +232,15 @@ export async function autoAssignJudges(
 export async function getJudgeAssignments(
   judgeId: string,
   eventId?: string,
-  prismaClient = db
+  prismaClient?: any
 ) {
+  const client = await getDb(prismaClient);
   const whereClause: any = { judgeId };
   if (eventId) {
     whereClause.submission = { eventId };
   }
 
-  return await prismaClient.judgeAssignment.findMany({
+  return await client.judgeAssignment.findMany({
     where: whereClause,
     include: {
       submission: {
@@ -253,9 +266,10 @@ export async function getJudgeAssignments(
  */
 export async function getJudgeProgressList(
   eventId: string,
-  prismaClient = db
+  prismaClient?: any
 ): Promise<AssignmentProgress[]> {
-  const judges = await prismaClient.user.findMany({
+  const client = await getDb(prismaClient);
+  const judges = await client.user.findMany({
     where: {
       role: { in: ["JUDGE", "ORGANIZER", "ADMIN"] },
     },

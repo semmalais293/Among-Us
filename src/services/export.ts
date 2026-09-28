@@ -1,6 +1,17 @@
-import { db } from "../lib/db";
-import { getEventNormalizedStandings } from "./normalization";
-import { getJudgeProgressList } from "./assignment";
+import { getEventNormalizedStandings } from "./normalization.ts";
+import { getJudgeProgressList } from "./assignment.ts";
+
+// Lazy-loaded Prisma database client to support offline unit testing and modular development
+async function getDb(overrideClient?: any) {
+  if (overrideClient) return overrideClient;
+  try {
+    // @ts-ignore
+    const dbModule = await import("../lib/db");
+    return dbModule.db;
+  } catch {
+    throw new Error("Database client (src/lib/db) is not yet initialized by Person A.");
+  }
+}
 
 /**
  * Escapes a field according to RFC 4180 standards.
@@ -29,7 +40,7 @@ export function buildCsv(headers: string[], rows: (string | number | null | unde
 /**
  * Export final leaderboard & normalized standings as CSV.
  */
-export async function exportLeaderboardCsv(eventId: string, prismaClient = db): Promise<string> {
+export async function exportLeaderboardCsv(eventId: string, prismaClient?: any): Promise<string> {
   const standingsData = await getEventNormalizedStandings(eventId, 75, 15, prismaClient);
 
   const headers = [
@@ -64,8 +75,9 @@ export async function exportLeaderboardCsv(eventId: string, prismaClient = db): 
 /**
  * Export criterion-level detailed scores across all judges for auditing.
  */
-export async function exportDetailedScoresCsv(eventId: string, prismaClient = db): Promise<string> {
-  const assignments = await prismaClient.judgeAssignment.findMany({
+export async function exportDetailedScoresCsv(eventId: string, prismaClient?: any): Promise<string> {
+  const client = await getDb(prismaClient);
+  const assignments = await client.judgeAssignment.findMany({
     where: {
       submission: { eventId },
     },
@@ -160,7 +172,7 @@ export async function exportDetailedScoresCsv(eventId: string, prismaClient = db
 /**
  * Export judge evaluation progress and workload statistics.
  */
-export async function exportJudgeProgressCsv(eventId: string, prismaClient = db): Promise<string> {
+export async function exportJudgeProgressCsv(eventId: string, prismaClient?: any): Promise<string> {
   const progressList = await getJudgeProgressList(eventId, prismaClient);
 
   const headers = [

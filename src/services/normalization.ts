@@ -1,5 +1,16 @@
-import { db } from "../lib/db";
-import { calculateWeightedScore } from "./scoring";
+import { calculateWeightedScore } from "./scoring.ts";
+
+// Lazy-loaded Prisma database client to support offline unit testing and modular development
+async function getDb(overrideClient?: any) {
+  if (overrideClient) return overrideClient;
+  try {
+    // @ts-ignore
+    const dbModule = await import("../lib/db");
+    return dbModule.db;
+  } catch {
+    throw new Error("Database client (src/lib/db) is not yet initialized by Person A.");
+  }
+}
 
 export interface JudgeStats {
   judgeId: string;
@@ -91,10 +102,11 @@ export async function getEventNormalizedStandings(
   eventId: string,
   targetMean = 75,
   targetStdDev = 15,
-  prismaClient = db
+  prismaClient?: any
 ): Promise<EventLeaderboardResult> {
+  const client = await getDb(prismaClient);
   // 1. Fetch completed assignments with scores and criteria for the event
-  const assignments = await prismaClient.judgeAssignment.findMany({
+  const assignments = await client.judgeAssignment.findMany({
     where: {
       submission: { eventId },
       isCompleted: true,
@@ -116,7 +128,7 @@ export async function getEventNormalizedStandings(
   });
 
   // Also fetch all submissions to count uncompleted / pending assignments
-  const allSubmissions = await prismaClient.submission.findMany({
+  const allSubmissions = await client.submission.findMany({
     where: { eventId, status: "SUBMITTED" },
     include: {
       track: true,
