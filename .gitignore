@@ -7,4 +7,5 @@ coverage/
 .env.*
 !.env.example
 *.tsbuildinfo
-next-env.d.ts
+next-env.d.tsnode_modules
+.next
